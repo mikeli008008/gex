@@ -1,0 +1,48 @@
+//@version=6
+indicator("GEX Levels (NQ) — auto-emit", overlay=true, max_lines_count=40, max_labels_count=40)
+G = "GEX levels — regenerated pre-market by gex_nq.py"
+
+callWall = input.float(30345.36, "Call Wall", group=G, inline="callWall")
+gammaFlip = input.float(30178.51, "Gamma Flip", group=G, inline="gammaFlip")
+putWall = input.float(29098.29, "Put Wall", group=G, inline="putWall")
+showGxVA = input.bool(true, "Show GX POC/VAH/VAL", group=G)
+gxPOC = input.float(29721.83, "GX POC", group=G, inline="gxPOC")
+gxVAH = input.float(30221.75, "GX VAH", group=G, inline="gxVAH")
+gxVAL = input.float(29221.90, "GX VAL", group=G, inline="gxVAL")
+mag0 = input.float(29513.98, "Mag 710", group="Magnets", inline="mag0")
+mag1 = input.float(29929.67, "Mag 720", group="Magnets", inline="mag1")
+mag2 = input.float(30137.52, "Mag 725", group="Magnets", inline="mag2")
+nMag = 3
+
+regimeTxt = "Negative γ (trend)"
+negGamma = true
+asof = "2026-07-08 05:03 UTC"
+
+f_ray(_p, _col, _txt, _style) =>
+    var line ln = na
+    var label lb = na
+    if barstate.islast and _p > 0
+        line.delete(ln)
+        ln := line.new(bar_index-1, _p, bar_index, _p, extend=extend.both, color=_col, width=1, style=_style)
+        label.delete(lb)
+        lb := label.new(bar_index, _p, _txt+"  "+str.tostring(_p, format.mintick), style=label.style_label_left, textcolor=_col, color=color.new(color.black,100), size=size.small)
+
+f_ray(callWall,  color.red,    "Call Wall",  line.style_solid)
+f_ray(gammaFlip, color.yellow, "Gamma Flip", line.style_solid)
+f_ray(putWall,   color.lime,   "Put Wall",   line.style_solid)
+if showGxVA
+    f_ray(gxPOC, color.orange, "GX POC", line.style_dashed)
+    f_ray(gxVAH, color.gray,   "GX VAH", line.style_dotted)
+    f_ray(gxVAL, color.gray,   "GX VAL", line.style_dotted)
+if nMag > 0
+    f_ray(mag0, color.aqua, "Magnet", line.style_dashed)
+if nMag > 1
+    f_ray(mag1, color.aqua, "Magnet", line.style_dashed)
+if nMag > 2
+    f_ray(mag2, color.aqua, "Magnet", line.style_dashed)
+
+bgcolor(negGamma ? color.new(color.red,94) : color.new(color.green,94))
+var table t = table.new(position.top_right, 1, 2, border_width=1)
+if barstate.islast
+    table.cell(t, 0, 0, regimeTxt, text_color=negGamma?color.red:color.lime, text_size=size.small)
+    table.cell(t, 0, 1, asof, text_color=color.gray, text_size=size.tiny)
