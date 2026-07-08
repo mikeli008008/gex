@@ -1,0 +1,53 @@
+name: Daily GEX Levels
+
+on:
+  schedule:
+    # 12:00 UTC = 08:00 ET during EDT (summer).
+    # In winter (EST) the market is UTC-5 — change this to '0 13 * * 1-5' for 08:00 ET.
+    - cron: '0 12 * * 1-5'
+  workflow_dispatch:            # adds a manual "Run workflow" button
+
+permissions:
+  contents: write               # lets the job commit the generated files back
+
+jobs:
+  gex:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate GEX levels
+        run: |
+          mkdir -p gex
+          python gex_nq.py --outdir gex --json
+          echo "----- generated -----"
+          cat gex/gex_levels.txt
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gex-levels
+          path: |
+            gex/gex_overlay.pine
+            gex/gex_levels.txt
+            gex/GexLevels.js
+            gex/levels.json
+          retention-days: 14
+
+      - name: Commit levels back to repo
+        run: |
+          git config user.name  "gex-bot"
+          git config user.email "gex-bot@users.noreply.github.com"
+          git add gex/
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "GEX levels $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
