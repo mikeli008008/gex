@@ -55,6 +55,14 @@ def fetch_nq():
     return float(d["chart"]["result"][0]["meta"]["regularMarketPrice"])
 
 
+def fetch_ndx():
+    """NDX cash index — used only for the NQ-NDX basis (the S: spread field)."""
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/%5ENDX?interval=1d&range=1d"
+    req = urllib.request.Request(url, headers=UA)
+    d = json.load(urllib.request.urlopen(req, timeout=25))
+    return float(d["chart"]["result"][0]["meta"]["regularMarketPrice"])
+
+
 # ============================================================ parse + compute
 def parse_opts(options, spot, max_dte):
     """return list of dicts: strike, typ, oi, gamma, iv, dte"""
@@ -106,13 +114,28 @@ def compute(opts, spot, flip_puts=False):
     net = 0.0
     per_strike = {}     # strike -> net signed gex$  (windowed)
     abs_strike = {}     # strike -> total abs gex$   (windowed, for POC/VA/magnets)
+    call_gex = {}       # strike -> call gamma$      (windowed, for call walls)
+    put_gex  = {}       # strike -> put gamma$       (windowed, for put walls)
+    call_oi  = {}       # strike -> call OI          (for max pain)
+    put_oi   = {}       # strike -> put OI
+    prof     = {}       # strike -> net signed gex$  (FULL chain, for the P: profile)
     for o in opts:
         g = gex_dollars(o["gamma"], o["oi"], spot)
         s = csign * g if o["typ"] == "C" else psign * g
         net += s                                    # net GEX uses the FULL chain
-        if win_lo <= o["strike"] <= win_hi:         # levels only from near-money
-            per_strike[o["strike"]] = per_strike.get(o["strike"], 0.0) + s
-            abs_strike[o["strike"]] = abs_strike.get(o["strike"], 0.0) + g
+        k = o["strike"]
+        prof[k] = prof.get(k, 0.0) + s
+        if o["typ"] == "C":
+            call_oi[k] = call_oi.get(k, 0.0) + o["oi"]
+        else:
+            put_oi[k] = put_oi.get(k, 0.0) + o["oi"]
+        if win_lo <= k <= win_hi:                   # levels only from near-money
+            per_strike[k] = per_strike.get(k, 0.0) + s
+            abs_strike[k] = abs_strike.get(k, 0.0) + g
+            if o["typ"] == "C":
+                call_gex[k] = call_gex.get(k, 0.0) + g
+            else:
+                put_gex[k] = put_gex.get(k, 0.0) + g
 
     # walls: most positive strike = call wall, most negative = put wall
     call_wall = max(per_strike, key=lambda k: per_strike[k])
@@ -120,8 +143,10 @@ def compute(opts, spot, flip_puts=False):
 
     # GX POC = biggest abs-gamma strike ; VAH/VAL = POC +/- 1-session expected move
     poc = max(abs_strike, key=lambda k: abs_strike[k])
-    atm = min(opts, key=lambda o: (abs(o["strike"] - spot), o["dte"]))
-    em = spot * atm["iv"] * math.sqrt(1.0 / 252.0)      # ~1 trading-day expected move
+    atm_pool = [o for o in opts if o["dte"] >= 1] or opts   # skip 0DTE IV noise
+    atm = min(atm_pool, key=lambda o: (abs(o["strike"] - spot), o["dte"]))
+    sigma = spot * atm["iv"] * math.sqrt(1.0 / 252.0)   # ~1 trading-day 1-sigma move
+    em = sigma
     vah, val = poc + em, poc - em
 
     # magnets: top abs-gamma strikes not already a named level
@@ -132,11 +157,45 @@ def compute(opts, spot, flip_puts=False):
     # gamma flip via BS spot sweep (recompute gamma as spot shifts)
     flip = gamma_flip(opts, spot, csign, psign)
 
+    # max pain: strike minimizing total option-holder payout (windowed)
+    mp = max_pain(call_oi, put_oi, win_lo, win_hi)
+
+    # ranked walls with detail (strike, gex$ , C/P ratio) for the override output
+    def cp(k):
+        c, p = call_gex.get(k, 0.0), put_gex.get(k, 0.0)
+        return c / p if p > 0 else 99.9
+    cwalls = [{"k": k, "gex": call_gex[k], "cp": cp(k)}
+              for k in sorted(call_gex, key=lambda k: call_gex[k], reverse=True)
+              if call_gex[k] > put_gex.get(k, 0.0)][:8]        # call-dominated only
+    pwalls = [{"k": k, "gex": put_gex[k], "cp": cp(k)}
+              for k in sorted(put_gex, key=lambda k: put_gex[k], reverse=True)
+              if put_gex[k] > call_gex.get(k, 0.0)][:8]         # put-dominated only
+
+    # full gamma profile for the P: section (strike -> net gex$), +/-13% of spot
+    plo, phi = spot * 0.87, spot * 1.13
+    profile = [(k, prof[k]) for k in sorted(prof) if plo <= k <= phi and abs(prof[k]) > 0]
+
     return {
         "net_gex": net, "call_wall": call_wall, "put_wall": put_wall,
         "gamma_flip": flip, "gx_poc": poc, "gx_vah": vah, "gx_val": val,
         "magnets": [(k, f"Mag {int(round(k))}") for k in mags],
+        # extra fields for --override (QQQ units; scaled later):
+        "max_pain": mp, "sigma": sigma, "call_walls": cwalls, "put_walls": pwalls,
+        "profile": profile,
     }
+
+
+def max_pain(call_oi, put_oi, lo, hi):
+    strikes = sorted(k for k in set(call_oi) | set(put_oi) if lo <= k <= hi)
+    if not strikes:
+        return None
+    best_k, best_pain = None, None
+    for S in strikes:
+        pain = sum(call_oi.get(K, 0) * max(0.0, S - K) for K in strikes) \
+             + sum(put_oi.get(K, 0) * max(0.0, K - S) for K in strikes)
+        if best_pain is None or pain < best_pain:
+            best_pain, best_k = pain, S
+    return best_k
 
 
 def gamma_flip(opts, spot, csign, psign):
@@ -168,10 +227,14 @@ def gamma_flip(opts, spot, csign, psign):
 
 def scale_to_nq(levels, ratio):
     out = dict(levels)
-    for k in ("call_wall", "put_wall", "gamma_flip", "gx_poc", "gx_vah", "gx_val"):
+    for k in ("call_wall", "put_wall", "gamma_flip", "gx_poc", "gx_vah", "gx_val",
+              "max_pain", "sigma"):
         if out.get(k) is not None:
             out[k] = out[k] * ratio
     out["magnets"] = [(p * ratio, lbl) for p, lbl in out.get("magnets", [])]
+    for wk in ("call_walls", "put_walls"):
+        out[wk] = [{**w, "k": w["k"] * ratio} for w in out.get(wk, [])]
+    out["profile"] = [(k * ratio, v) for k, v in out.get("profile", [])]
     return out
 
 
@@ -300,7 +363,70 @@ def build_js(d):
     )
 
 
-def emit_all(d, outdir="."):
+def build_override(d, spread):
+    """emit the S:<spread>|L:<entries> string the NQ/NDX GEX indicator ingests.
+    Entry = price,CODE,NAME,tooltip1~tooltip2~...,weight  (structural weight=0,
+    walls weight = Tot GEX in $M)."""
+    def r(x):
+        return int(round(x))
+
+    zg  = d.get("gamma_flip")
+    sig = d.get("sigma") or 0.0
+    spot = d.get("spot_nq")
+    ehigh = spot + sig
+    elow  = spot - sig
+    vh = (zg + 0.5 * sig) if zg else None
+    vl = (zg - 0.5 * sig) if zg else None
+    mp = d.get("max_pain")
+
+    entries = []
+    def add(price, code, name, tips, weight):
+        if price is None:
+            return
+        entries.append(f"{r(price)},{code},{name},{'~'.join(tips)},{weight}")
+
+    add(zg, "ZG", "ZERO GAMMA",
+        ["Zero Gamma", "Key pivot where dealer gamma flips", "Price magnet"], 0)
+    add(mp, "MP", "MAX PAIN",
+        ["Max Pain", "Strike with maximum option pain", "Expiry target"], 0)
+    add(ehigh, "EH", "EM HIGH",
+        ["Expected Move HIGH", "1-sigma upper boundary", "Statistical resistance"], 0)
+    add(elow, "EL", "EM LOW",
+        ["Expected Move LOW", "1-sigma lower boundary", "Statistical support"], 0)
+    add(vh, "VH", "VOL HIGH",
+        ["Vol Band HIGH", "Volatility-based resistance", "ZG + 25% EM"], 0)
+    add(vl, "VL", "VOL LOW",
+        ["Vol Band LOW", "Volatility-based support", "ZG - 25% EM"], 0)
+
+    walls = [("CW", "Call Wall", d.get("call_walls", [])),
+             ("PW", "Put Wall",  d.get("put_walls", []))]
+    max_gex = max([w["gex"] for _c, _n, ws in walls for w in ws] + [1.0])
+    for code, name, ws in walls:
+        for w in ws:
+            price, gex, cpr = w["k"], w["gex"], w["cp"]
+            frm = (price - spot) / spot * 100 if spot else 0.0
+            hold = int(round(min(90, 50 + 40 * (gex / max_gex))))
+            tips = [f"Strike: {r(price)}", f"From Spot: {frm:+.2f}%",
+                    f"Tot GEX: {gex/1e6:.2f}M", f"C/P Ratio: {cpr:.1f}",
+                    f"Hold: {hold}% | Break: {100 - hold}%"]
+            add(price, code, name, tips, f"{gex/1e6:.1f}")
+
+    L_str = "S:{:.2f}|L:".format(spread) + ";".join(entries)
+
+    # ----- P: gamma profile section (strike, value scaled to maxAbs=10, sign) -----
+    prof = d.get("profile", [])
+    if prof:
+        maxabs = max(abs(v) for _k, v in prof) or 1.0
+        pes = []
+        for k, v in prof:
+            scaled = v / maxabs * 10.0
+            sign = 1 if v >= 0 else -1
+            pes.append(f"{r(k)},{scaled:.1f},{sign}")
+        return L_str + "|P:" + ";".join(pes) + "\n"
+    return L_str + "\n"
+
+
+def emit_all(d, outdir=".", spread=0.0, override=False):
     import os
     paths = {"pine": os.path.join(outdir, "gex_overlay.pine"),
              "txt":  os.path.join(outdir, "gex_levels.txt"),
@@ -308,6 +434,9 @@ def emit_all(d, outdir="."):
     open(paths["pine"], "w").write(build_pine(d))
     open(paths["txt"], "w").write(build_txt(d))
     open(paths["js"], "w").write(build_js(d))
+    if override:
+        paths["override"] = os.path.join(outdir, "gex_override.txt")
+        open(paths["override"], "w").write(build_override(d, spread))
     return paths
 
 
@@ -319,6 +448,8 @@ def main():
     ap.add_argument("--outdir", default=".")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--flip-puts", action="store_true")
+    ap.add_argument("--override", action="store_true",
+                    help="also emit gex_override.txt for the NQ/NDX Pine indicator's Live GEX Override box")
     args = ap.parse_args()
 
     print("Fetching QQQ chain from CBOE ...")
@@ -335,12 +466,22 @@ def main():
     lv["spot_nq"] = nq
     lv["asof"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    paths = emit_all(lv, outdir=args.outdir)
+    spread = 0.0
+    if args.override:
+        try:
+            spread = nq - fetch_ndx()          # NQ futures - NDX cash basis
+        except Exception:
+            spread = 0.0                        # non-fatal: basis is display metadata only
+
+    paths = emit_all(lv, outdir=args.outdir, spread=spread, override=args.override)
     if args.json:
         json.dump(lv, open(f"{args.outdir}/levels.json", "w"), indent=2)
 
     print()
     print(build_txt(lv))
+    if args.override:
+        print("----- Live GEX Override string -----")
+        print(build_override(lv, spread))
     print("Wrote:", ", ".join(paths.values()) + (", levels.json" if args.json else ""))
 
 
