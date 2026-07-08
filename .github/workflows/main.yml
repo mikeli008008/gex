@@ -25,7 +25,7 @@ jobs:
       - name: Generate GEX levels
         run: |
           mkdir -p gex
-          python gex_nq.py --outdir gex --json
+          python gex_nq.py --outdir gex --json --override
           echo "----- generated -----"
           cat gex/gex_levels.txt
 
@@ -37,6 +37,7 @@ jobs:
             gex/gex_overlay.pine
             gex/gex_levels.txt
             gex/GexLevels.js
+            gex/gex_override.txt
             gex/levels.json
           retention-days: 14
 
@@ -47,6 +48,10 @@ jobs:
           git add gex/
           if git diff --cached --quiet; then
             echo "No changes to commit."
+          else
+            git commit -m "GEX levels $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
           else
             git commit -m "GEX levels $(date -u +'%Y-%m-%d %H:%M UTC')"
             git push
