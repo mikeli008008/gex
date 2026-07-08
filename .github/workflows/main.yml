@@ -50,7 +50,8 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "GEX levels $(date -u +'%Y-%m-%d %H:%M UTC')"
-            git push
+            git pull --rebase origin main || true
+            git push origin HEAD:main
           fi
           else
             git commit -m "GEX levels $(date -u +'%Y-%m-%d %H:%M UTC')"
