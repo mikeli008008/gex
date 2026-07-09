@@ -25,7 +25,13 @@ jobs:
       - name: Generate GEX levels
         run: |
           mkdir -p gex
-          python gex_nq.py --outdir gex --json --override --crosscheck
+          ok=0
+          for i in 1 2 3; do
+            if python gex_nq.py --outdir gex --json --override --live-em --crosscheck; then ok=1; break; fi
+            echo "::warning::attempt $i failed (upstream data source flaky) — retrying in 30s"
+            sleep 30
+          done
+          if [ "$ok" != "1" ]; then echo "::error::all 3 attempts failed"; exit 1; fi
           echo "----- generated -----"
           cat gex/gex_levels.txt
 
