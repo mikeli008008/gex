@@ -1,18 +1,18 @@
 ==============================================
  NQ GEX LEVELS  —  draw as horizontal lines
  Regime : Negative γ (trend)
- As of  : 2026-07-17 13:10 UTC
- NQ spot: 28652.75
- Net GEX: -4.97 $B/1%
+ As of  : 2026-07-20 13:51 UTC
+ NQ spot: 29151.75
+ Net GEX: -1.55 $B/1%
 ==============================================
-   30174.28   Call Wall  (red)
-   29533.96   Gamma Flip (yellow)
-   29388.92   Mag 711 (aqua)
-   29369.05   GX VAH   (gray)
-   29347.59   Mag 710 (aqua)
-   28934.24   Put Wall   (green)
-   28934.24   GX POC   (orange)
-   28520.89   Mag 690 (aqua)
-   28499.43   GX VAL   (gray)
+   30199.64   Call Wall  (red)
+   29408.47   GX VAH   (gray)
+   29372.25   Mag 710 (aqua)
+   29359.64   Gamma Flip (yellow)
+   29165.40   Mag 705 (aqua)
+   28958.56   GX POC   (orange)
+   28751.71   Mag 695 (aqua)
+   28544.86   Put Wall   (green)
+   28508.64   GX VAL   (gray)
 ==============================================
  Tradovate: right-click chart > Horizontal Line, type each price.
