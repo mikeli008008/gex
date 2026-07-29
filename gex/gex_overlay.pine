@@ -2,21 +2,21 @@
 indicator("GEX Levels (NQ) — auto-emit", overlay=true, max_lines_count=40, max_labels_count=40)
 G = "GEX levels — regenerated pre-market by gex_nq.py"
 
-callWall = input.float(30088.18, "Call Wall", group=G, inline="callWall")
-gammaFlip = input.float(28843.61, "Gamma Flip", group=G, inline="gammaFlip")
-putWall = input.float(28027.35, "Put Wall", group=G, inline="putWall")
+callWall = input.float(28212.07, "Call Wall", group=G, inline="callWall")
+gammaFlip = input.float(28548.72, "Gamma Flip", group=G, inline="gammaFlip")
+putWall = input.float(27182.43, "Put Wall", group=G, inline="putWall")
 showGxVA = input.bool(true, "Show GX POC/VAH/VAL", group=G)
-gxPOC = input.float(28027.35, "GX POC", group=G, inline="gxPOC")
-gxVAH = input.float(28693.07, "GX VAH", group=G, inline="gxVAH")
-gxVAL = input.float(27361.62, "GX VAL", group=G, inline="gxVAL")
-mag0 = input.float(28851.68, "Mag 700", group="Magnets", inline="mag0")
-mag1 = input.float(28439.51, "Mag 690", group="Magnets", inline="mag1")
-mag2 = input.float(27615.18, "Mag 670", group="Magnets", inline="mag2")
+gxPOC = input.float(28006.14, "GX POC", group=G, inline="gxPOC")
+gxVAH = input.float(28745.79, "GX VAH", group=G, inline="gxVAH")
+gxVAL = input.float(27266.50, "GX VAL", group=G, inline="gxVAL")
+mag0 = input.float(28829.85, "Mag 700", group="Magnets", inline="mag0")
+mag1 = input.float(28418.00, "Mag 690", group="Magnets", inline="mag1")
+mag2 = input.float(28623.93, "Mag 695", group="Magnets", inline="mag2")
 nMag = 3
 
 regimeTxt = "Negative γ (trend)"
 negGamma = true
-asof = "2026-07-28 13:45 UTC"
+asof = "2026-07-29 13:50 UTC"
 
 f_ray(_p, _col, _txt, _style) =>
     var line ln = na
