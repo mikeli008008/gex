@@ -4,7 +4,7 @@ on:
   schedule:
     # 12:00 UTC = 08:00 ET during EDT (summer).
     # In winter (EST) the market is UTC-5 — change this to '0 13 * * 1-5' for 08:00 ET.
-    - cron: '0 12 * * 1-5'
+    - cron: '0 10 * * 1-5'
   workflow_dispatch:            # adds a manual "Run workflow" button
 
 permissions:
