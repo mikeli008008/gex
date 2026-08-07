@@ -5,13 +5,13 @@ const predef = require("./tools/predef");
 class GexLevels {
     map() {
         return {
-            callWall: 30059.05,
-            gammaFlip: 29172.51,
-            putWall: 28000.21,
-            gxPOC: 28823.74,
-            mag0: 29647.28,
-            mag1: 29235.51,
-            mag2: 29441.40,
+            callWall: 29647.03,
+            gammaFlip: 29269.42,
+            putWall: 28823.50,
+            gxPOC: 29647.03,
+            mag0: 29441.15,
+            mag1: 29235.26,
+            mag2: 29852.91,
         };
     }
 }
