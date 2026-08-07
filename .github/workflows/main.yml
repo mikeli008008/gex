@@ -2,8 +2,9 @@ name: Daily GEX Levels
 
 on:
   schedule:
-    # 12:00 UTC = 08:00 ET during EDT (summer).
-    # In winter (EST) the market is UTC-5 — change this to '0 13 * * 1-5' for 08:00 ET.
+    # 10:00 UTC, weekdays. DST-proof: with GitHub's scheduler lag it lands
+    # ~07:00-08:00 ET in summer (EDT) and ~06:00-07:00 ET in winter (EST) —
+    # always comfortably before the 09:30 ET cash open. No seasonal edit needed.
     - cron: '0 10 * * 1-5'
   workflow_dispatch:            # adds a manual "Run workflow" button
 
@@ -22,7 +23,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Generate GEX levels
+      - name: Generate GEX levels (full chain, <=45 DTE)
         run: |
           mkdir -p gex
           ok=0
@@ -32,9 +33,53 @@ jobs:
             sleep 30
           done
           if [ "$ok" != "1" ]; then echo "::error::all 3 attempts failed"; exit 1; fi
-          echo "----- generated -----"
+          echo "----- full-chain generated -----"
           cat gex/gex_levels.txt
 
+      # 0DTE-only lens. Non-fatal: if today has no 0DTE expiry or the subset
+      # fails, we still keep the full-chain map above. Writes to gex/0dte/.
+      - name: Generate GEX levels (0DTE only)
+        continue-on-error: true
+        run: |
+          mkdir -p gex/0dte
+          ok=0
+          for i in 1 2 3; do
+            if python gex_nq.py --outdir gex/0dte --json --override --live-em --max-dte 0; then ok=1; break; fi
+            echo "::warning::0DTE attempt $i failed — retrying in 30s"
+            sleep 30
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::warning::0DTE map failed 3x (no 0DTE expiry today or data flaky) — skipping, full-chain map is unaffected"
+          else
+            echo "----- 0DTE-only generated -----"
+            cat gex/0dte/gex_levels.txt
+          fi
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gex-levels
+          path: |
+            gex/gex_overlay.pine
+            gex/gex_levels.txt
+            gex/GexLevels.js
+            gex/gex_override.txt
+            gex/levels.json
+            gex/0dte/gex_overlay.pine
+            gex/0dte/gex_levels.txt
+            gex/0dte/gex_override.txt
+            gex/0dte/levels.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Commit levels back to repo
+        run: |
+          git config user.name  "gex-bot"
+          git config user.email "gex-bot@users.noreply.github.com"
+          git add gex/
+          git commit -m "GEX levels $(date -u +'%Y-%m-%d %H:%M UTC')" || echo "nothing to commit"
+          git pull --rebase origin main || true
+          git push origin HEAD:main
       - name: Upload as workflow artifact
         uses: actions/upload-artifact@v4
         with:
