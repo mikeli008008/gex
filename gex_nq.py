@@ -100,7 +100,7 @@ def fetch_crosscheck():
 
 
 # ============================================================ parse + compute
-def parse_opts(options, spot, max_dte):
+def parse_opts(options, spot, max_dte, min_dte=0):
     """return list of dicts: strike, typ, oi, gamma, iv, dte"""
     today = datetime.now(timezone.utc).date()
     out = []
@@ -119,7 +119,7 @@ def parse_opts(options, spot, max_dte):
         except ValueError:
             continue
         dte = (exp - today).days
-        if dte < 0 or dte > max_dte:
+        if dte < min_dte or dte > max_dte:
             continue
         out.append({
             "strike": int(strike8) / 1000.0,
@@ -190,6 +190,12 @@ def compute(opts, spot, flip_puts=False):
     mags = [k for k in sorted(abs_strike, key=lambda k: abs_strike[k], reverse=True)
             if k not in named][:3]
 
+    # Abs GEX levels (Tanuki-style Ab1..Ab3): strikes with the largest TOTAL gamma
+    # (call + put combined), regardless of net sign. These catch two-sided hedging
+    # zones that net GEX cancels out and a pure call-wall/put-wall view misses.
+    abs_walls = [{"k": k, "gex": abs_strike[k]}
+                 for k in sorted(abs_strike, key=lambda k: abs_strike[k], reverse=True)][:3]
+
     # gamma flip via BS spot sweep (recompute gamma as spot shifts)
     flip = gamma_flip(opts, spot, csign, psign)
 
@@ -217,6 +223,7 @@ def compute(opts, spot, flip_puts=False):
         "magnets": [(k, f"Mag {int(round(k))}") for k in mags],
         # extra fields for --override (QQQ units; scaled later):
         "max_pain": mp, "sigma": sigma, "call_walls": cwalls, "put_walls": pwalls,
+        "abs_walls": abs_walls,
         "profile": profile,
     }
 
@@ -268,7 +275,7 @@ def scale_to_nq(levels, ratio):
         if out.get(k) is not None:
             out[k] = out[k] * ratio
     out["magnets"] = [(p * ratio, lbl) for p, lbl in out.get("magnets", [])]
-    for wk in ("call_walls", "put_walls"):
+    for wk in ("call_walls", "put_walls", "abs_walls"):
         out[wk] = [{**w, "k": w["k"] * ratio} for w in out.get(wk, [])]
     out["profile"] = [(k * ratio, v) for k, v in out.get("profile", [])]
     return out
@@ -451,6 +458,15 @@ def build_override(d, spread, live_em=False):
                     f"Hold: {hold}% | Break: {100 - hold}%"]
             add(price, code, name, tips, f"{gex/1e6:.1f}")
 
+    # Abs-GEX levels (Ab1..Ab3): largest total call+put gamma, regardless of net sign
+    for i, w in enumerate(d.get("abs_walls", []), 1):
+        price, gex = w["k"], w["gex"]
+        frm = (price - spot) / spot * 100 if spot else 0.0
+        tips = [f"Strike: {r(price)}", f"From Spot: {frm:+.2f}%",
+                f"Total Gamma: {gex/1e6:.2f}M", f"Abs rank: Ab{i}",
+                "Largest call+put gamma - two-sided hedging zone"]
+        add(price, "AB", "Abs GEX", tips, f"{gex/1e6:.1f}")
+
     L_str = "S:{:.2f}|L:".format(spread) + ";".join(entries)
 
     # ----- P: gamma profile section (strike, value scaled to maxAbs=10, sign) -----
@@ -484,6 +500,9 @@ def emit_all(d, outdir=".", spread=0.0, override=False, live_em=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max-dte", type=int, default=45)
+    ap.add_argument("--min-dte", type=int, default=0,
+                    help="exclude expiries nearer than this many days; use 1 to drop "
+                         "0DTE from the cumulative map (Tanuki-style separation)")
     ap.add_argument("--nq", type=float, default=None)
     ap.add_argument("--outdir", default=".")
     ap.add_argument("--json", action="store_true")
@@ -502,8 +521,8 @@ def main():
     ratio = nq / qqq_spot
     print(f"QQQ spot {qqq_spot:.2f} | NQ {nq:.2f} | ratio {ratio:.4f}")
 
-    opts = parse_opts(options, qqq_spot, args.max_dte)
-    print(f"{len(opts)} live option legs within {args.max_dte} DTE")
+    opts = parse_opts(options, qqq_spot, args.max_dte, args.min_dte)
+    print(f"{len(opts)} live option legs within {args.min_dte}-{args.max_dte} DTE")
 
     lv = compute(opts, qqq_spot, flip_puts=args.flip_puts)
     lv = scale_to_nq(lv, ratio)
