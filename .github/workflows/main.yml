@@ -55,12 +55,31 @@ jobs:
             cat gex/0dte/gex_levels.txt
           fi
 
+      # One combined file so both maps live at a single URL:
+      #   https://raw.githubusercontent.com/mikeli008008/gex/main/gex/combined.txt
+      - name: Build combined view (full-chain + 0DTE in one file)
+        run: |
+          OUT=gex/combined.txt
+          {
+            echo "# GEX OVERRIDE STRINGS - generated $(date -u +'%Y-%m-%d %H:%M UTC')"
+            echo "# Paste each string into its own instance of your Pine indicator."
+            echo
+            echo "===== FULL CHAIN (<=45 DTE) ====="
+            cat gex/gex_override.txt 2>/dev/null || echo "(full-chain override missing)"
+            echo
+            echo
+            echo "===== 0DTE ONLY ====="
+            cat gex/0dte/gex_override.txt 2>/dev/null || echo "(0DTE override missing - no 0DTE expiry today or step skipped)"
+          } > "$OUT"
+          echo "wrote $OUT"
+
       - name: Upload as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: gex-levels
           overwrite: true          # allow re-runs to replace the prior artifact (fixes 409 Conflict)
           path: |
+            gex/combined.txt
             gex/gex_overlay.pine
             gex/gex_levels.txt
             gex/GexLevels.js
