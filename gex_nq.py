@@ -25,6 +25,10 @@ Flags:  --max-dte 45   limit expiries considered (default 45)
         --outdir DIR   where to write files (default .)
         --json         also dump levels.json
         --flip-puts    flip dealer sign convention (advanced; default calls +, puts -)
+        --em-walls     add skew-aware multi-sigma expected-move IV walls (EMU/EMD/EMM)
+        --em-dte N     target DTE for the EM walls: pick nearest expiry >= N (default 1)
+        --em-sigmas S  comma list of sigma multiples (default "1,2,3")
+        --no-em-skew   use symmetric ATM IV instead of put/call skew for the EM walls
 """
 
 import re
@@ -278,7 +282,71 @@ def scale_to_nq(levels, ratio):
     for wk in ("call_walls", "put_walls", "abs_walls"):
         out[wk] = [{**w, "k": w["k"] * ratio} for w in out.get(wk, [])]
     out["profile"] = [(k * ratio, v) for k, v in out.get("profile", [])]
+    out["em_walls"] = [{**w, "k": w["k"] * ratio} for w in out.get("em_walls", [])]
     return out
+
+
+# ============================================================ expected-move IV walls
+def _interp_iv(iv_by_strike, px):
+    """linear-interpolate IV at price px from a {strike: iv} map"""
+    ks = sorted(iv_by_strike)
+    if not ks:
+        return None
+    below = [k for k in ks if k <= px]
+    above = [k for k in ks if k >= px]
+    if not below or not above:                      # px outside listed strikes
+        return iv_by_strike[min(ks, key=lambda x: abs(x - px))]
+    lo, hi = below[-1], above[0]
+    if lo == hi:
+        return iv_by_strike[lo]
+    w = (px - lo) / (hi - lo)
+    return iv_by_strike[lo] * (1 - w) + iv_by_strike[hi] * w
+
+
+def expected_move_walls(opts, spot, sigmas=(1.0, 2.0, 3.0), target_dte=1,
+                        skew=True, cal_days=365.0):
+    """Skew-aware expected-move IV walls at +/-k sigma off the ATM IV of the
+    nearest expiry >= target_dte. Downside walls use put IV, upside use call IV,
+    so the equity put-skew widens the lower band (a realized-vol band can't do
+    this). Returns QQQ-space dicts (scaled to NQ later by scale_to_nq).
+
+    Codes: EMU{k} / EMD{k} (+ EMM mean). T = calendar dte / 365 (the standard
+    straddle expected-move convention) — deliberately different from the intraday
+    `sigma` in compute(), which is a 1-trading-day move (sqrt(1/252))."""
+    calls, puts, dtes = {}, {}, set()
+    for o in opts:
+        iv = o.get("iv") or 0.0
+        if iv <= 0:
+            continue
+        d = o["dte"]                                 # dte is unique per expiry
+        (calls if o["typ"] == "C" else puts).setdefault(d, {})[o["strike"]] = iv
+        dtes.add(d)
+    if not dtes:
+        return []
+    chosen = next((d for d in sorted(dtes) if d >= target_dte), max(dtes))
+    T = max(chosen, 0.5) / cal_days                  # floor so 0DTE isn't zero
+    c_iv, p_iv = calls.get(chosen, {}), puts.get(chosen, {})
+    atm_pool = [x for x in (_interp_iv(c_iv, spot), _interp_iv(p_iv, spot)) if x]
+    if not atm_pool:
+        return []
+    atm_iv = sum(atm_pool) / len(atm_pool)
+    em1 = spot * atm_iv * math.sqrt(T)               # 1-sigma expected move (QQQ pts)
+
+    walls = [{"code": "EMM", "name": "EM mean", "k": spot,
+              "iv": atm_iv, "sig": 0, "dte": chosen}]
+    for k in sigmas:
+        up, dn = spot + k * em1, spot - k * em1
+        uiv = (_interp_iv(c_iv, up) or atm_iv) if skew else atm_iv
+        div = (_interp_iv(p_iv, dn) or atm_iv) if skew else atm_iv
+        if skew:                                     # re-price the wall at its local IV
+            up = spot + k * spot * uiv * math.sqrt(T)
+            dn = spot - k * spot * div * math.sqrt(T)
+        ki = int(k) if float(k).is_integer() else k
+        walls.append({"code": f"EMU{ki}", "name": f"EM +{ki}\u03c3", "k": up,
+                      "iv": uiv, "sig": k, "dte": chosen})
+        walls.append({"code": f"EMD{ki}", "name": f"EM -{ki}\u03c3", "k": dn,
+                      "iv": div, "sig": k, "dte": chosen})
+    return walls
 
 
 # ============================================================ EMIT (inlined)
@@ -467,6 +535,16 @@ def build_override(d, spread, live_em=False):
                 "Largest call+put gamma - two-sided hedging zone"]
         add(price, "AB", "Abs GEX", tips, f"{gex/1e6:.1f}")
 
+    # Expected-move IV walls (EMU{k}/EMD{k} + EMM mean): skew-aware +/-k sigma bands.
+    # NOTE: if your NQ/NDX Pine indicator gates rendering/color on CODE, add
+    # EMU / EMD / EMM to its recognised set (one line each in the code->color map).
+    for w in d.get("em_walls", []):
+        price = w["k"]
+        frm = (price - spot) / spot * 100 if spot else 0.0
+        tips = [w["name"], f"From Spot: {frm:+.2f}%", f"Local IV: {w['iv']:.1%}",
+                f"Expiry DTE: {w['dte']}", "Skew-aware expected-move wall"]
+        add(price, w["code"], w["name"], tips, f"{w['sig']}")
+
     L_str = "S:{:.2f}|L:".format(spread) + ";".join(entries)
 
     # ----- P: gamma profile section (strike, value scaled to maxAbs=10, sign) -----
@@ -513,6 +591,14 @@ def main():
                     help="omit static EH/EL; carry sigma in ZG weight so Pine draws EM live off current close")
     ap.add_argument("--crosscheck", action="store_true",
                     help="fetch an independent QQQ GEX (InsiderFinance) and print side-by-side")
+    ap.add_argument("--em-walls", action="store_true",
+                    help="add skew-aware multi-sigma expected-move IV walls (EMU/EMD/EMM)")
+    ap.add_argument("--em-dte", type=int, default=1,
+                    help="target DTE for EM walls: pick nearest expiry >= this (default 1)")
+    ap.add_argument("--em-sigmas", default="1,2,3",
+                    help="comma list of sigma multiples for the EM walls (default 1,2,3)")
+    ap.add_argument("--no-em-skew", action="store_true",
+                    help="use symmetric ATM IV instead of put/call skew for the EM walls")
     args = ap.parse_args()
 
     print("Fetching QQQ chain from CBOE ...")
@@ -525,6 +611,10 @@ def main():
     print(f"{len(opts)} live option legs within {args.min_dte}-{args.max_dte} DTE")
 
     lv = compute(opts, qqq_spot, flip_puts=args.flip_puts)
+    if args.em_walls:
+        sig_list = tuple(float(x) for x in args.em_sigmas.split(",") if x.strip())
+        lv["em_walls"] = expected_move_walls(opts, qqq_spot, sig_list,
+                                             args.em_dte, skew=not args.no_em_skew)
     lv = scale_to_nq(lv, ratio)
     lv["spot_nq"] = nq
     lv["asof"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
