@@ -28,7 +28,7 @@ jobs:
           mkdir -p gex
           ok=0
           for i in 1 2 3; do
-            if python gex_nq.py --outdir gex --json --override --live-em --crosscheck --min-dte 1; then ok=1; break; fi
+            if python gex_nq.py --outdir gex --json --override --live-em --crosscheck --min-dte 1 --em-walls --em-dte 5; then ok=1; break; fi
             echo "::warning::attempt $i failed (upstream data source flaky) — retrying in 30s"
             sleep 30
           done
@@ -44,7 +44,7 @@ jobs:
           mkdir -p gex/0dte
           ok=0
           for i in 1 2 3; do
-            if python gex_nq.py --outdir gex/0dte --json --override --live-em --max-dte 0; then ok=1; break; fi
+            if python gex_nq.py --outdir gex/0dte --json --override --live-em --max-dte 0 --em-walls --em-dte 0; then ok=1; break; fi
             echo "::warning::0DTE attempt $i failed — retrying in 30s"
             sleep 30
           done
