@@ -1,0 +1,56 @@
+name: Weekly Trend Signals
+
+on:
+  schedule:
+    # Fridays 22:30 UTC = 6:30pm EDT / 5:30pm EST — after the daily futures settle.
+    # Trade the new targets at the Sunday-evening / Monday session.
+    - cron: '30 22 * * 5'
+  workflow_dispatch:            # manual "Run workflow" button
+
+permissions:
+  contents: write
+
+jobs:
+  trend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: pip install --quiet yfinance pandas numpy
+
+      - name: Generate trend signals
+        run: |
+          ok=0
+          for i in 1 2 3; do
+            if python trend/trend_signals.py; then ok=1; break; fi
+            echo "::warning::attempt $i failed (Yahoo data flaky) — retrying in 60s"
+            sleep 60
+          done
+          if [ "$ok" != "1" ]; then echo "::error::all 3 attempts failed"; exit 1; fi
+
+      # Readable at: https://github.com/mikeli008008/gex/blob/main/trend/latest.md
+      - name: Commit signals back to repo
+        run: |
+          git config user.name  "trend-bot"
+          git config user.email "trend-bot@users.noreply.github.com"
+          git add trend/latest.md trend/latest.json trend/history.csv
+          if git diff --cached --quiet; then
+            echo "No changes to commit."; exit 0
+          fi
+          git commit -m "Trend signals $(date -u +'%Y-%m-%d')"
+          for i in 1 2 3; do
+            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
+              echo "pushed on attempt $i"; exit 0
+            fi
+            echo "::warning::push attempt $i failed — retrying in 5s"
+            sleep 5
+          done
+          echo "::error::push failed after 3 attempts"
+          exit 1
