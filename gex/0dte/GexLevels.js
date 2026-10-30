@@ -1,17 +1,17 @@
 // GexLevels.js — paste into Tradovate Code Explorer (File > New)
-// Auto-generated 2026-10-29 16:29 UTC. Add to chart with "Overlay on price pane".
+// Auto-generated 2026-10-30 16:20 UTC. Add to chart with "Overlay on price pane".
 const predef = require("./tools/predef");
 
 class GexLevels {
     map() {
         return {
-            callWall: 29963.02,
-            gammaFlip: 29866.97,
-            putWall: 29343.10,
-            gxPOC: 29343.10,
-            mag0: 29549.74,
-            mag1: 29756.38,
-            mag2: 29508.41,
+            callWall: 29877.68,
+            gammaFlip: 29280.01,
+            putWall: 28513.96,
+            gxPOC: 28513.96,
+            mag0: 28927.21,
+            mag1: 28720.59,
+            mag2: 28761.91,
         };
     }
 }
