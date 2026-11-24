@@ -39,21 +39,29 @@ import time
 import urllib.request
 from datetime import date, datetime, timezone
 
-CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/QQQ.json"
+# CBOE moved this feed to cdn-api.cboe.com (Nov 2026); the old host 307-redirects there.
+CBOE_URL = "https://cdn-api.cboe.com/api/global/delayed_quotes/options/QQQ.json"
 YH_URL   = "https://query1.finance.yahoo.com/v8/finance/chart/NQ%3DF?interval=1d&range=1d"
-UA       = {"User-Agent": "Mozilla/5.0"}
+UA       = {"User-Agent": "Mozilla/5.0"}   # Yahoo: keep bare; a full browser UA gets 429'd
+# Cloudflare in front of CBOE started 403-ing the bare "Mozilla/5.0" UA on 2026-11-20.
+# A full browser UA plus Accept/Referer/Origin passes.
+CBOE_HDR = {"User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                           "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"),
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.cboe.com/", "Origin": "https://www.cboe.com"}
 MULT     = 100          # option contract multiplier
 RFR      = 0.045        # risk-free rate for the BS flip sweep
 OPT_RE   = re.compile(r"^([A-Z]+)(\d{6})([CP])(\d{8})$")
 
 
-def _get_json(url, tries=6, base_delay=4, timeout=30):
+def _get_json(url, tries=6, base_delay=4, timeout=30, headers=None):
     """GET json with retry+backoff. CBOE/Yahoo intermittently 503 or rate-limit
     GitHub runners; a single-shot fetch is why the daily job silently died."""
     last = None
     for i in range(tries):
         try:
-            req = urllib.request.Request(url, headers=UA)
+            req = urllib.request.Request(url, headers=headers or UA)
             return json.load(urllib.request.urlopen(req, timeout=timeout))
         except Exception as e:                       # noqa: BLE001
             last = e
@@ -65,7 +73,7 @@ def _get_json(url, tries=6, base_delay=4, timeout=30):
 
 # ============================================================ data fetch
 def fetch_qqq():
-    d = _get_json(CBOE_URL)["data"]
+    d = _get_json(CBOE_URL, headers=CBOE_HDR)["data"]
     return float(d["current_price"]), d["options"]
 
 

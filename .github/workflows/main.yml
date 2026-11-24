@@ -2,10 +2,12 @@ name: Daily GEX Levels
 
 on:
   schedule:
-    # 10:00 UTC, weekdays. DST-proof: with GitHub's scheduler lag it lands
-    # ~07:00-08:00 ET in summer (EDT) and ~06:00-07:00 ET in winter (EST) —
-    # always comfortably before the 09:30 ET cash open. No seasonal edit needed.
-    - cron: '0 10 * * 1-5'
+    # GitHub's scheduler is best-effort: '0 10' (top of the hour, its busiest slot) was
+    # starting 4-12 hours late by Nov 2026, i.e. after the 09:30 ET open. Two off-the-hour
+    # slots; the later one refreshes the first. For a guaranteed time, trigger
+    # workflow_dispatch from outside (VPS cron) - see README note in the PR.
+    - cron: '13 9 * * 1-5'      # 04:13 ET (EST) / 05:13 ET (EDT)
+    - cron: '41 11 * * 1-5'     # 06:41 ET (EST) / 07:41 ET (EDT)
   workflow_dispatch:            # adds a manual "Run workflow" button
 
 permissions:
