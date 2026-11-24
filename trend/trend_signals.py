@@ -160,7 +160,7 @@ def main():
                            contracts_micro=r['contracts_micro']) for r in rows])
     if os.path.exists(hp):
         old = pd.read_csv(hp)
-        old = old[old.asof.astype(str) != str(asof)]
+        old = old[old['asof'].astype(str) != str(asof)]
         h = pd.concat([old, h])
     h.to_csv(hp, index=False)
     print(md)
