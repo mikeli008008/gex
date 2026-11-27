@@ -1,17 +1,16 @@
 // GexLevels.js — paste into Tradovate Code Explorer (File > New)
-// Auto-generated 2026-11-25 20:37 UTC. Add to chart with "Overlay on price pane".
+// Auto-generated 2026-11-27 18:55 UTC. Add to chart with "Overlay on price pane".
 const predef = require("./tools/predef");
 
 class GexLevels {
     map() {
         return {
-            callWall: 26271.46,
-            gammaFlip: 26458.64,
-            putWall: 25942.04,
-            gxPOC: 25942.04,
-            mag0: 26147.93,
-            mag1: 26106.75,
-            mag2: 26024.40,
+            callWall: 26729.22,
+            putWall: 26318.01,
+            gxPOC: 26729.22,
+            mag0: 26770.35,
+            mag1: 26688.10,
+            mag2: 26811.47,
         };
     }
 }
@@ -24,7 +23,6 @@ module.exports = {
     params: {},
     plots: {
         callWall: { title: "Call Wall" },
-        gammaFlip: { title: "Gamma Flip" },
         putWall: { title: "Put Wall" },
         gxPOC: { title: "GX POC" },
         mag0: { title: "Magnet 1" },
@@ -34,7 +32,6 @@ module.exports = {
     schemeStyles: {
         dark: {
             callWall: { color: "red", lineWidth: 1, lineStyle: 1 },
-            gammaFlip: { color: "yellow", lineWidth: 1, lineStyle: 1 },
             putWall: { color: "lime", lineWidth: 1, lineStyle: 1 },
             gxPOC: { color: "orange", lineWidth: 1, lineStyle: 1 },
             mag0: { color: "aqua", lineWidth: 1, lineStyle: 1 },
