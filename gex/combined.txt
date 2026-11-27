@@ -1,4 +1,4 @@
-# GEX OVERRIDE STRINGS - generated 2026-11-27 18:55 UTC
+# GEX OVERRIDE STRINGS - generated 2026-11-27 20:17 UTC
 # Paste each string into its own instance of your Pine indicator.
 
 ===== FULL CHAIN (<=45 DTE) =====

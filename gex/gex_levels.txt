@@ -1,7 +1,7 @@
 ==============================================
  NQ GEX LEVELS  —  draw as horizontal lines
  Regime : Negative γ (trend)
- As of  : 2026-11-27 18:55 UTC
+ As of  : 2026-11-27 20:17 UTC
  NQ spot: 26765.00
  Net GEX: -0.79 $B/1%
 ==============================================

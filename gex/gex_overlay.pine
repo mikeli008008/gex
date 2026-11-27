@@ -16,7 +16,7 @@ nMag = 3
 
 regimeTxt = "Negative γ (trend)"
 negGamma = true
-asof = "2026-11-27 18:55 UTC"
+asof = "2026-11-27 20:17 UTC"
 
 f_ray(_p, _col, _txt, _style) =>
     var line ln = na
